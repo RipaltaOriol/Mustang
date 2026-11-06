@@ -44,6 +44,8 @@ SCHEMAS = {
         "exchange": "text",
         "isdelisted": "text",
         "category": "text",
+        "figi": "text",
+        "famaindustry": "text",
         "sector": "text",
         "industry": "text",
         "currency": "text",
@@ -395,6 +397,8 @@ def test_securities_cover_delisted_names_in_the_fundamentals_universe(tmp_path):
             "exchange": "NYSE",
             "isdelisted": delisted,
             "category": "Domestic Common Stock",
+            "figi": f"BBG{permaticker}",
+            "famaindustry": "Software",
             "sector": "Tech",
             "industry": "Software",
             "currency": "USD",
@@ -415,6 +419,29 @@ def test_securities_cover_delisted_names_in_the_fundamentals_universe(tmp_path):
     assert result["ticker"].tolist() == ["NA", "OLD"]
     assert result["is_delisted"].tolist() == [False, True]
     assert result["security_id"].tolist() == [1, 2]
+
+
+def test_a_snapshot_read_returns_rows_older_than_the_subscription_floor(tmp_path):
+    rows = [filing("OLD", recent(365 * 11)), filing("OLD", recent(5), dimension="MRQ")]
+    provider, _ = make_provider(tmp_path, {"fundamentals": rows})
+
+    result = provider.fetch_snapshot(
+        "fundamentals", tickers=["OLD"], fields=["sharesbas"], filters={"dimension": "ARQ"}
+    )
+
+    assert result["date"].dt.strftime("%Y-%m-%d").tolist() == [recent(365 * 11)]
+
+
+def test_a_refresh_archives_the_previous_snapshot_instead_of_overwriting_it(tmp_path):
+    provider, _ = make_provider(tmp_path, {"fundamentals": [filing("AAA", recent(800))]})
+    path = provider.refresh_snapshot("fundamentals")
+    before = path.read_bytes()
+
+    provider.refresh_snapshot("fundamentals")
+
+    archived = list((path.parent / "archive").iterdir())
+    assert [file.read_bytes() for file in archived] == [before]
+    assert path.exists()
 
 
 def test_an_empty_ticker_list_is_rejected_rather_than_meaning_everything(tmp_path):

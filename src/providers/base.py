@@ -19,6 +19,8 @@ SECURITY_COLUMNS = (
     "exchange",
     "is_delisted",
     "category",
+    "figi",
+    "fama_industry",
     "sector",
     "industry",
     "currency",

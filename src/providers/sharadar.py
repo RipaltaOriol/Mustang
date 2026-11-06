@@ -12,7 +12,7 @@ import time
 import warnings
 import zipfile
 from collections.abc import Iterator, Mapping, Sequence
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -125,6 +125,8 @@ class SharadarProvider(DataProvider):
                 "exchange",
                 "isdelisted",
                 "category",
+                "figi",
+                "famaindustry",
                 "sector",
                 "industry",
                 "currency",
@@ -136,6 +138,7 @@ class SharadarProvider(DataProvider):
         frame = frame.rename(
             columns={
                 "permaticker": "security_id",
+                "famaindustry": "fama_industry",
                 "firstpricedate": "first_price_date",
                 "lastpricedate": "last_price_date",
             }
@@ -236,9 +239,34 @@ class SharadarProvider(DataProvider):
                 rows = self._read_snapshot(table, last, columns, condition)
         return _to_frame(rows)
 
+    def fetch_snapshot(
+        self,
+        table: str,
+        tickers: Sequence[str] | None = None,
+        fields: Sequence[str] | None = None,
+        filters: Mapping[str, str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Return Sharadar rows from a table's local snapshot, including those older than the
+        rolling subscription floor; `ticker`, `date` and any filtered column are always included.
+
+        Raises:
+            NotEntitledError: the subscription does not include the table.
+            DataProviderError: the snapshot had to be downloaded and the download failed.
+        """
+        if table not in _DATED_TABLES:
+            raise ValueError(f"Table {table!r} has no bulk snapshot.")
+        filters = dict(filters or {})
+        ticker_list = _normalise_tickers(tickers)
+        condition = _equals_condition(filters)
+        if ticker_list is not None:
+            condition = condition & pc.field("ticker").isin(ticker_list)
+        columns = _with_required_columns(fields, filters, ("ticker", "date"))
+        return _to_frame(self._read_snapshot(table, date.today(), columns, condition))
+
     def refresh_snapshot(self, table: str) -> Path:
         """
-        Download the latest bulk file for a table, replacing any local snapshot atomically.
+        Download the latest bulk file for a table, archiving any previous local snapshot.
 
         Raises:
             NotEntitledError: the subscription does not include the table.
@@ -259,8 +287,17 @@ class SharadarProvider(DataProvider):
             logger.info("Downloading the %s bulk file (tier %s).", table, tier)
             self._download(url, archive, table)
             self._convert_archive(table, archive, parquet)
+            self._archive_snapshot(path)
             os.replace(parquet, path)
         return path
+
+    def _archive_snapshot(self, path: Path) -> None:
+        if not path.exists():
+            return
+        archive_dir = self._snapshot_dir / "archive"
+        archive_dir.mkdir(exist_ok=True)
+        taken = datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y%m%dT%H%M%S%f")
+        os.link(path, archive_dir / f"{path.stem}-{taken}{path.suffix}")
 
     def snapshot_date(self, table: str) -> date | None:
         """
