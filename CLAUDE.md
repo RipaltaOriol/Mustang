@@ -11,6 +11,11 @@ Its shape (one-line comments, the docstring template) → [CODING_STANDARDS.md](
 A gap, workaround or unfinished case goes in your final report to the user, or in a GitHub issue.
 
 
+## Research scripts
+
+Building or exploring a Panel, a Signal, a table or a chart happens in a `# %%` script in `research/`. Reusable logic lives in `src/` with tests. Writing or changing either → [CODING_STANDARDS.md](CODING_STANDARDS.md#research-scripts).
+
+
 ## Agent skills
 
 - **Issue tracker** — GitHub issues in `RipaltaOriol/Mustang` via `gh`: [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md)
