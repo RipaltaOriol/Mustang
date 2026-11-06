@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Local dev keypair and the tokens minted from it (swing-alerts-dev-token).
+.dev-token-key.pem
+.dev-token
+
+# Node / React
+ui/node_modules/
+ui/.vite/
+ui/dist/
+# The server-side build the prerender step renders from; an artefact, never served.
+ui/.ssr/
+swing_alerts/static/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+*.log
+
+# Secrets / keys
+*.pem
+*.key
+
+# Documentation
+developer_guide.md
+
+# Postgres dump files
+backups/
+
+# design-sync
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
+ui/src/.ds-entry.ts
+ui/src/.ds-style.css
+ui/index.d.ts
+ui/src/.ds-query-client.ts
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Licensed vendor data and everything built from it
+data/

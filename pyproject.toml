@@ -1,0 +1,19 @@
+[project]
+name = "outstanding-shares-x-section"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.3,<3",
+    "pyarrow>=26,<27",
+    "python-dotenv>=1,<2",
+    "requests>=2.32,<3",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.4.0",
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
