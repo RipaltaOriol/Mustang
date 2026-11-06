@@ -1,3 +1,5 @@
+import re
+
 import pandas as pd
 import pytest
 
@@ -217,6 +219,44 @@ def test_rows_before_the_start_are_dropped_but_older_filings_carry_forward():
     assert rows["share_count"].notna().all()
 
 
+def test_a_filing_before_the_start_gets_its_real_effective_date():
+    inputs = make_inputs(
+        prices=[price("AAA", "2019-12-30"), price("AAA", "2019-12-31")]
+        + [price("AAA", day) for day in TRADING_DAYS],
+        filings=[filing("AAA", "2019-12-30")],
+    )
+
+    rows = rows_for(build_panel(inputs, start=START).panel, "AAA")
+
+    assert days(rows["effective_date"])[0] == "2019-12-31"
+
+
+def test_the_panel_ends_on_the_last_date_with_valuations():
+    inputs = make_inputs(daily=[valuation("AAA", day) for day in TRADING_DAYS[:-1]])
+
+    panel = build_panel(inputs, start=START).panel
+
+    assert days(panel["date"]) == TRADING_DAYS[:-1]
+    assert panel["market_cap_usd"].notna().all()
+
+
+def test_the_report_counts_snapshots_where_a_secondary_class_lacked_its_primary_class():
+    inputs = make_inputs(
+        sp500=member_rows(
+            first=("GOOG",), last=("GOOGL", "GOOG"), events=[("2020-01-06", "added", "GOOGL")]
+        ),
+        securities=[security("GOOGL", 1)],
+        prices=[price("GOOGL", day) for day in TRADING_DAYS],
+        daily=[valuation("GOOGL", day) for day in TRADING_DAYS],
+        filings=[filing("GOOGL", "2019-11-01")],
+    )
+
+    report = build_panel(inputs, start=START).report
+
+    assert "snapshots_without_primary" in report
+    assert re.search(r"GOOG\s+GOOGL\s+1000\s+1\.0\s+1\n", report)
+
+
 def test_panel_prices_name_the_split_adjusted_close_and_valuations_are_in_usd():
     panel = build_panel(make_inputs(), start=START).panel
     row = panel.iloc[0]
@@ -239,6 +279,7 @@ def test_panel_prices_name_the_split_adjusted_close_and_valuations_are_in_usd():
         ([("2020-01-06", "delisted")], "other"),
         ([("2020-01-06", "delisted"), ("2020-01-02", "acquisitionby")], "acquired"),
         ([("2020-01-06", "delisted"), ("2020-02-20", "acquisitionby")], "other"),
+        ([("2020-01-06", "delisted"), ("2020-01-06", "mergerto")], "acquired"),
     ],
 )
 def test_the_exit_is_recorded_only_on_the_last_row(actions, reason):
