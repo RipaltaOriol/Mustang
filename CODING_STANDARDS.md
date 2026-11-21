@@ -53,6 +53,6 @@ A research script is a `# %%` Python file in `research/`, run cell by cell in an
 - Put parameters in the first code cell after the imports, including `SAVE = False`.
 - Write outputs only in the last cell, behind `if SAVE:`. Outputs go to the git-ignored `data/processed/`.
 - Call a dataset's check function before saving it. Tests cover the functions in `src/` and not the order of the cells, so the check is what guards the sequence.
-- Import with `from src...`; `uv sync` installs the project, so this works from any folder.
+- Import with `from src...` and run on the `.venv` kernel. `uv sync` installs the project there, so this works from any folder; another kernel fails with `No module named 'src'`.
 
 **Markdown cells:** `# %% [markdown]` cells may run to several lines, as the exception to the comment rules above. Use them to record what a cell shows and what you concluded, in GLOSSARY words. Comments in code cells follow the rules above.

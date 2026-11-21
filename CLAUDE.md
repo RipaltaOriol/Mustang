@@ -1,3 +1,5 @@
+This repository is a quantitative finance research factory. The aim is to develop and explore research trading ideas and hypotheses.
+
 ## Comments and docstrings
 
 Names, types and tests carry the meaning. A comment or docstring you write passes all three tests:
