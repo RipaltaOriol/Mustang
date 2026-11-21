@@ -1,8 +1,9 @@
 """
-Build the Panel of S&P 500 Ever-members, with its Corporate Events and build report.
+The steps that build the Panel of S&P 500 Ever-members and its Corporate Events.
+
+See: research/sp500_panel.py
 """
 
-import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
@@ -12,8 +13,6 @@ import numpy as np
 import pandas as pd
 
 from src.providers import SharadarProvider
-
-logger = logging.getLogger(__name__)
 
 PANEL_START = "2016-12-31"
 PROCESSED_DIR = Path(__file__).resolve().parents[1] / "data" / "processed"
@@ -51,7 +50,6 @@ _PRICE_FIELDS: Mapping[str, str] = {
 _SNAPSHOT_TABLES = ("sp500", "stocks", "daily", "fundamentals", "actions")
 _USD_PER_MILLION = 1_000_000
 _EXIT_ACTION_WINDOW = pd.Timedelta(days=5)
-_JUMP_THRESHOLD = 0.25
 _EVENT_ACTIONS = frozenset({"split", "spinoff", "spinoffdividend", "spunofffrom", "mergerfrom", "mergerto"})
 _EVENT_ACTION_PREFIX = "acquisition"
 
@@ -110,19 +108,12 @@ class PanelInputs:
     actions: pd.DataFrame
 
 
-@dataclass(frozen=True)
-class PanelBuild:
-    panel: pd.DataFrame
-    events: pd.DataFrame
-    report: str
-
-
 def load_inputs(provider: SharadarProvider, start: str = PANEL_START) -> PanelInputs:
     """
     Fetch everything the Panel needs for the Ever-members of the S&P 500.
     """
     sp500 = provider.fetch_table("sp500")
-    tickers = sorted(set(_company_periods(sp500)["ticker"]))
+    tickers = sorted(set(company_periods(sp500)["ticker"]))
     return PanelInputs(
         sp500=sp500,
         securities=provider.securities(),
@@ -142,60 +133,106 @@ def load_inputs(provider: SharadarProvider, start: str = PANEL_START) -> PanelIn
     )
 
 
-def build_panel(inputs: PanelInputs, start: str = PANEL_START) -> PanelBuild:
+def data_as_of(provider: SharadarProvider) -> date:
     """
-    Assemble and check the Panel, the Corporate Events and the report from the raw inputs.
+    Return the date of the oldest snapshot, which names the outputs built from those snapshots.
+    """
+    return min(taken for table in _SNAPSHOT_TABLES if (taken := provider.snapshot_date(table)))
+
+
+def company_periods(sp500: pd.DataFrame) -> pd.DataFrame:
+    """
+    Return each Company's periods as a Constituent, with Secondary Classes folded into the Primary Class.
 
     Raises:
-        PanelCheckError: membership, coverage or row rules failed.
+        PanelCheckError: the additions and removals do not replay to a dated list of Constituents.
     """
-    periods = _company_periods(inputs.sp500)
-    ever_members = set(periods["ticker"])
-    securities = inputs.securities[inputs.securities["ticker"].isin(ever_members)]
-    _require_all(ever_members, set(securities["ticker"]), "no company record")
+    periods = _membership_periods(sp500)
+    periods["ticker"] = periods["ticker"].replace(SECONDARY_TO_PRIMARY)
+    return periods
 
-    begin = pd.Timestamp(start)
-    prices = _with_dates(inputs.prices, "date")
-    prices = prices[prices["ticker"].isin(ever_members)]
-    trading_days = prices["date"]
-    valuations = _valuations(inputs.daily)
+
+def member_securities(securities: pd.DataFrame, ever_members: set[str]) -> pd.DataFrame:
+    """
+    Return the company records of the Ever-members.
+
+    Raises:
+        PanelCheckError: an Ever-member has no company record.
+    """
+    members = securities[securities["ticker"].isin(ever_members)]
+    _require_all(ever_members, set(members["ticker"]), "no company record")
+    return members
+
+
+def member_prices(prices: pd.DataFrame, ever_members: set[str]) -> pd.DataFrame:
+    dated = _with_dates(prices, "date")
+    return dated[dated["ticker"].isin(ever_members)]
+
+
+def prices_in_window(
+    prices: pd.DataFrame, valuations: pd.DataFrame, ever_members: set[str], start: str = PANEL_START
+) -> pd.DataFrame:
+    """
+    Return the prices from the start through the last date with valuations.
+
+    Raises:
+        PanelCheckError: an Ever-member has no prices in the window.
+    """
     # Stocks and daily update at different hours, so prices can run past the last valuations.
-    prices = prices[(prices["date"] >= begin) & (prices["date"] <= valuations["date"].max())]
-    _require_all(ever_members, set(prices["ticker"]), "no prices")
+    inside = (prices["date"] >= pd.Timestamp(start)) & (prices["date"] <= valuations["date"].max())
+    window = prices[inside]
+    _require_all(ever_members, set(window["ticker"]), "no prices")
+    return window
 
-    filings = _with_dates(inputs.filings, "date", "reportperiod")
-    filings = filings[filings["ticker"].isin(ever_members)]
-    _require_all(ever_members, set(filings["ticker"]), "no filings")
 
-    actions = _with_dates(inputs.actions, "date")
-    actions = actions[actions["ticker"].isin(ever_members)]
+def member_filings(filings: pd.DataFrame, ever_members: set[str]) -> pd.DataFrame:
+    """
+    Return the filings of the Ever-members.
 
-    counts = _share_counts(filings, trading_days)
-    panel = pd.merge_asof(
+    Raises:
+        PanelCheckError: an Ever-member has no filings.
+    """
+    dated = _with_dates(filings, "date", "reportperiod")
+    members = dated[dated["ticker"].isin(ever_members)]
+    _require_all(ever_members, set(members["ticker"]), "no filings")
+    return members
+
+
+def member_actions(actions: pd.DataFrame, ever_members: set[str]) -> pd.DataFrame:
+    dated = _with_dates(actions, "date")
+    return dated[dated["ticker"].isin(ever_members)]
+
+
+def with_share_counts(prices: pd.DataFrame, counts: pd.DataFrame) -> pd.DataFrame:
+    return pd.merge_asof(
         prices.sort_values("date"),
         counts,
         left_on="date",
         right_on="effective_date",
         by="ticker",
     )
-    panel = panel.merge(valuations, on=["ticker", "date"], how="left")
-    panel = panel.merge(
+
+
+def with_valuations(panel: pd.DataFrame, valuations: pd.DataFrame) -> pd.DataFrame:
+    return panel.merge(valuations, on=["ticker", "date"], how="left")
+
+
+def with_company_fields(panel: pd.DataFrame, securities: pd.DataFrame) -> pd.DataFrame:
+    return panel.merge(
         securities.rename(columns={"security_id": "permaticker"})[
             ["ticker", "permaticker", "name", "figi", "exchange", "sector", "industry", "fama_industry"]
         ],
         on="ticker",
     )
-    panel["in_sp500"] = _in_sp500(panel, periods)
-    panel = panel.rename(columns={"close": "close_split_adjusted"})
-    panel = _with_exits(panel, securities, actions)
-    panel = panel.sort_values(["date", "ticker"]).reset_index(drop=True)[list(PANEL_COLUMNS)]
 
-    check_panel(panel)
-    return PanelBuild(
-        panel=panel,
-        events=_events(actions, securities),
-        report=_report(panel, filings, _folded_classes(inputs.sp500)),
-    )
+
+def with_constituent_flag(panel: pd.DataFrame, periods: pd.DataFrame) -> pd.DataFrame:
+    return panel.assign(in_sp500=_in_sp500(panel, periods))
+
+
+def finish_panel(panel: pd.DataFrame) -> pd.DataFrame:
+    named = panel.rename(columns={"close": "close_split_adjusted"})
+    return named.sort_values(["date", "ticker"]).reset_index(drop=True)[list(PANEL_COLUMNS)]
 
 
 def check_panel(panel: pd.DataFrame) -> None:
@@ -203,8 +240,12 @@ def check_panel(panel: pd.DataFrame) -> None:
     Enforce the row rules on an assembled Panel.
 
     Raises:
-        PanelCheckError: a Company has two rows on one date, or a Share Count precedes its Effective Date.
+        PanelCheckError: the columns differ from PANEL_COLUMNS, a Company has two rows on one date,
+            or a Share Count precedes its Effective Date.
     """
+    if tuple(panel.columns) != PANEL_COLUMNS:
+        difference = sorted(set(panel.columns) ^ set(PANEL_COLUMNS))
+        raise PanelCheckError(f"The columns differ from PANEL_COLUMNS: {difference}.")
     duplicated = panel.duplicated(["permaticker", "date"])
     if duplicated.any():
         raise PanelCheckError(f"{duplicated.sum()} rows are two rows for one Company on one date.")
@@ -216,9 +257,11 @@ def check_panel(panel: pd.DataFrame) -> None:
         )
 
 
-def write_outputs(build: PanelBuild, directory: Path | str, as_of: date | str) -> list[Path]:
+def write_outputs(
+    panel: pd.DataFrame, events: pd.DataFrame, directory: Path | str, as_of: date | str
+) -> list[Path]:
     """
-    Write the Panel, Corporate Events and report, each named for the date of the data they came from.
+    Write the Panel and Corporate Events, each named for the date of the data they came from.
 
     Raises:
         FileExistsError: an output for this date exists, and outputs are never overwritten.
@@ -226,42 +269,15 @@ def write_outputs(build: PanelBuild, directory: Path | str, as_of: date | str) -
     root = Path(directory)
     panel_path = root / f"sp500_panel_{as_of}.parquet"
     events_path = root / f"sp500_events_{as_of}.parquet"
-    report_path = root / f"sp500_report_{as_of}.md"
-    paths = [panel_path, events_path, report_path]
+    paths = [panel_path, events_path]
     existing = [path.name for path in paths if path.exists()]
     if existing:
         raise FileExistsError(f"Refusing to overwrite {existing}.")
 
     root.mkdir(parents=True, exist_ok=True)
-    build.panel.to_parquet(panel_path, index=False)
-    build.events.to_parquet(events_path, index=False)
-    report_path.write_text(build.report)
+    panel.to_parquet(panel_path, index=False)
+    events.to_parquet(events_path, index=False)
     return paths
-
-
-def _company_periods(sp500: pd.DataFrame) -> pd.DataFrame:
-    periods = _membership_periods(sp500)
-    periods["ticker"] = periods["ticker"].replace(SECONDARY_TO_PRIMARY)
-    return periods
-
-
-def _folded_classes(sp500: pd.DataFrame) -> pd.DataFrame:
-    snapshots = sp500[sp500["action"].isin(("historical", "current"))]
-    rows = []
-    for secondary, primary in sorted(SECONDARY_TO_PRIMARY.items()):
-        held = set(snapshots.loc[snapshots["ticker"] == secondary, "date"])
-        if held:
-            primary_held = set(snapshots.loc[snapshots["ticker"] == primary, "date"])
-            rows.append(
-                {
-                    "removed_class": secondary,
-                    "primary_class": primary,
-                    "snapshots_without_primary": len(held - primary_held),
-                }
-            )
-    return pd.DataFrame(
-        rows, columns=["removed_class", "primary_class", "snapshots_without_primary"]
-    )
 
 
 def _membership_periods(sp500: pd.DataFrame) -> pd.DataFrame:
@@ -297,7 +313,7 @@ def _in_sp500(panel: pd.DataFrame, periods: pd.DataFrame) -> pd.Series:
     return flag
 
 
-def _share_counts(filings: pd.DataFrame, trading_days: pd.Series) -> pd.DataFrame:
+def share_counts(filings: pd.DataFrame, trading_days: pd.Series) -> pd.DataFrame:
     calendar = np.sort(trading_days.unique())
     positions = np.searchsorted(calendar, filings["date"].to_numpy(), side="right")
     reachable = positions < len(calendar)
@@ -316,14 +332,14 @@ def _share_counts(filings: pd.DataFrame, trading_days: pd.Series) -> pd.DataFram
     return counts.drop(columns="dimension", errors="ignore").sort_values("effective_date")
 
 
-def _valuations(daily: pd.DataFrame) -> pd.DataFrame:
+def daily_valuations(daily: pd.DataFrame) -> pd.DataFrame:
     frame = _with_dates(daily, "date")
     frame["market_cap_usd"] = frame["marketcap"] * _USD_PER_MILLION
     frame["ev_usd"] = frame["ev"] * _USD_PER_MILLION
     return frame[["ticker", "date", "market_cap_usd", "ev_usd", "pb", "pe", "ps", "evebitda"]]
 
 
-def _with_exits(
+def with_exits(
     panel: pd.DataFrame, securities: pd.DataFrame, actions: pd.DataFrame
 ) -> pd.DataFrame:
     delisted = securities.loc[securities["is_delisted"], "ticker"]
@@ -355,7 +371,7 @@ def _exit_of(ticker: str, last_price: pd.Timestamp, actions: pd.DataFrame) -> tu
     return exit_date, "other"
 
 
-def _events(actions: pd.DataFrame, securities: pd.DataFrame) -> pd.DataFrame:
+def corporate_events(actions: pd.DataFrame, securities: pd.DataFrame) -> pd.DataFrame:
     wanted = actions["action"].isin(_EVENT_ACTIONS) | actions["action"].str.startswith(
         _EVENT_ACTION_PREFIX
     )
@@ -364,62 +380,6 @@ def _events(actions: pd.DataFrame, securities: pd.DataFrame) -> pd.DataFrame:
     events = events.rename(columns={"contraticker": "contra_ticker", "contraname": "contra_name"})
     columns = ["date", "permaticker", "ticker", "action", "value", "contra_ticker", "contra_name"]
     return events.sort_values(["date", "ticker"]).reset_index(drop=True)[columns]
-
-
-def _report(panel: pd.DataFrame, filings: pd.DataFrame, folded: pd.DataFrame) -> str:
-    latest = filings.sort_values("date").groupby("ticker").tail(1).set_index("ticker")
-    classes = folded.assign(
-        latest_share_count=folded["primary_class"].map(latest["sharesbas"]),
-        share_factor=folded["primary_class"].map(latest["sharefactor"]),
-    )[
-        [
-            "removed_class",
-            "primary_class",
-            "latest_share_count",
-            "share_factor",
-            "snapshots_without_primary",
-        ]
-    ]
-
-    factors = filings[filings["sharefactor"] != 1]
-    factor_summary = factors.groupby("ticker")["sharefactor"].agg(["min", "max", "count"]).reset_index()
-
-    ordered = filings.sort_values(["ticker", "date", "reportperiod"])
-    change = ordered.groupby("ticker")["sharesbas"].pct_change()
-    jumps = ordered.assign(change=change)[change.abs() > _JUMP_THRESHOLD]
-    jumps = jumps[["ticker", "date", "reportperiod", "sharesbas", "change"]].sort_values(
-        "change", key=abs, ascending=False
-    )
-
-    stale = panel[panel["volume"] == 0].groupby("ticker").size().rename("zero_volume_rows")
-    stale = stale.sort_values(ascending=False).reset_index()
-
-    uncounted = panel[panel["share_count"].isna()].groupby("ticker").size().rename("rows")
-    uncounted = uncounted.sort_values(ascending=False).reset_index()
-
-    summary = pd.DataFrame(
-        {
-            "value": {
-                "rows": len(panel),
-                "companies": panel["permaticker"].nunique(),
-                "first_date": panel["date"].min().date(),
-                "last_date": panel["date"].max().date(),
-                "constituent_rows": int(panel["in_sp500"].sum()),
-                "exits": int(panel["exit_date"].notna().sum()),
-            }
-        }
-    )
-    sections = [
-        ("Summary", summary.reset_index(names="item")),
-        ("Removed Secondary Classes", classes),
-        ("Share factors other than 1", factor_summary),
-        (f"Share Count jumps above {_JUMP_THRESHOLD:.0%} between filings", jumps),
-        ("Stale prices (zero volume rows)", stale),
-        ("Rows with no Share Count", uncounted),
-    ]
-    return "# S&P 500 Panel build report\n\n" + "\n\n".join(
-        f"## {title}\n\n```\n{frame.to_string(index=False)}\n```" for title, frame in sections
-    ) + "\n"
 
 
 def _with_dates(frame: pd.DataFrame, *columns: str) -> pd.DataFrame:
@@ -433,16 +393,3 @@ def _require_all(required: set[str], present: set[str], problem: str) -> None:
     missing = sorted(required - present)
     if missing:
         raise PanelCheckError(f"Ever-members with {problem}: {missing}.")
-
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-    provider = SharadarProvider.from_env()
-    inputs = load_inputs(provider)
-    as_of = min(taken for table in _SNAPSHOT_TABLES if (taken := provider.snapshot_date(table)))
-    for path in write_outputs(build_panel(inputs), PROCESSED_DIR, as_of):
-        logger.info("Wrote %s", path)
-
-
-if __name__ == "__main__":
-    main()
