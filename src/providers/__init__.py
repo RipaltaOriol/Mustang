@@ -4,6 +4,7 @@ from .base import (
     InsufficientHistoryError,
     NotEntitledError,
 )
+from .sec import SecProvider
 from .sharadar import SharadarProvider
 
 __all__ = [
@@ -11,5 +12,6 @@ __all__ = [
     "DataProviderError",
     "InsufficientHistoryError",
     "NotEntitledError",
+    "SecProvider",
     "SharadarProvider",
 ]
