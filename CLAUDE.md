@@ -1,3 +1,5 @@
+This repository is a quantitative finance research factory. The aim is to develop and explore research trading ideas and hypotheses.
+
 ## Comments and docstrings
 
 Names, types and tests carry the meaning. A comment or docstring you write passes all three tests:
@@ -9,6 +11,11 @@ Names, types and tests carry the meaning. A comment or docstring you write passe
 Its shape (one-line comments, the docstring template) → [CODING_STANDARDS.md](CODING_STANDARDS.md).
 
 A gap, workaround or unfinished case goes in your final report to the user, or in a GitHub issue.
+
+
+## Research Scripts
+
+Building or exploring a panel, a signal, a table or a chart happens in a `# %%` script under `research/`. Reusable logic lives in `src/` with tests. Writing or changing either → [CODING_STANDARDS.md](CODING_STANDARDS.md#research-scripts).
 
 
 ## Agent skills
