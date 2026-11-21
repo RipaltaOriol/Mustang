@@ -178,6 +178,18 @@ def test_the_tolerance_can_be_widened():
     assert row(table, "AAA")["pct_shares_issued"] == pytest.approx(0.10)
 
 
+def test_a_refiled_comparison_quarter_keeps_the_first_share_count():
+    filings = [
+        filing("AAA", "2019-09-30", 100, filed="2019-11-01"),
+        filing("AAA", "2019-09-30", 500, filed="2019-12-01"),
+        filing("AAA", "2020-09-30", 110, filed="2020-11-01"),
+    ]
+
+    table = signal(members("AAA"), filings)
+
+    assert row(table, "AAA")["pct_shares_issued"] == pytest.approx(0.10)
+
+
 def test_a_filing_not_yet_effective_on_the_rebalance_date_is_not_used():
     filings = [*yearly("AAA", 100, 110), filing("AAA", "2019-12-31", 50, filed="2021-01-15"), filing("AAA", "2020-12-31", 200, filed="2021-01-15")]
 

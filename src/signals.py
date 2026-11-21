@@ -173,7 +173,8 @@ def _with_comparison_filing(
     candidates["distance"] = (candidates["period_end"] - candidates["target"]).abs()
     known = candidates["effective_date"] <= candidates["date"]
     near = candidates["distance"] <= pd.Timedelta(days=tolerance_days)
-    matched = candidates[known & near].sort_values(["distance", "filed_date"], ascending=[True, False])
+    # See docs/adr/0001-a-refiled-quarter-keeps-the-first-share-count.md
+    matched = candidates[known & near].sort_values(["distance", "filed_date"])
     best = matched.drop_duplicates("index").set_index("index")
     table["earlier_filed"] = best["filed_date"]
     table["earlier_count"] = best["company_share_count"]
@@ -184,7 +185,7 @@ def _warn_no_comparison(table: pd.DataFrame) -> None:
     missing = table[table["missing_reason"] == NO_COMPARISON]
     for day, rows in missing.groupby("date"):
         logger.warning(
-            "%s: %d Constituents have no filing one Lookback back, so their Share Count change is not updated: %s",
+            "%s: %d Constituents have no filing one Lookback back, so they are not ranked: %s",
             day.date(),
             len(rows),
             ", ".join(sorted(rows["ticker"])),

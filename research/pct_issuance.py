@@ -2,7 +2,8 @@
 # # Percentage Shares Issued
 #
 # Ranks the Constituents on each Rebalance Date by Percentage Shares Issued, the change in the
-# Company Share Count over the Lookback. Built from a saved Panel and its Corporate Events.
+# Company Share Count over the Lookback as a fraction of the earlier Company Share Count. Built
+# from a saved Panel and its Corporate Events.
 #
 # When you use the table:
 # - A rank of 0 is the biggest net buyback and 1 the biggest net issuer, among the Constituents
@@ -90,6 +91,18 @@ signal.groupby("date").agg(
     ranked=("pct_shares_issued_rank", "count"),
     median=("pct_shares_issued", "median"),
     with_event=("corporate_event_in_lookback", "sum"),
+).reset_index()
+
+# %% [markdown]
+# ### Constituents with no comparison filing
+#
+# The rows the warnings above name. Through 2017-09-29 the data holds no filing one Lookback back
+# for nearly every Constituent. After that, they are mostly spin-offs and newly formed Companies in
+# their first year, and late filers.
+
+# %%
+signal[signal["missing_reason"] == "no_comparison"].groupby("date")["ticker"].agg(
+    count="size", tickers=lambda tickers: ", ".join(sorted(tickers))
 ).reset_index()
 
 # %% [markdown]
