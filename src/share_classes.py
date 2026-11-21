@@ -1,7 +1,7 @@
 """
 Rules that make Share Counts comparable across Companies with several Share Classes.
 
-See: docs/adr/0001-signals-count-shares-in-primary-class-units.md
+See: docs/adr/0002-signals-count-shares-in-primary-class-units.md
 """
 
 from collections.abc import Mapping
@@ -18,7 +18,7 @@ def company_share_count(counts: pd.DataFrame) -> pd.Series:
     """
     Return the Company Share Count: `share_count` times `share_factor`.
 
-    See: docs/adr/0001-signals-count-shares-in-primary-class-units.md
+    See: docs/adr/0002-signals-count-shares-in-primary-class-units.md
     """
     return counts["share_count"] * counts["share_factor"]
 
