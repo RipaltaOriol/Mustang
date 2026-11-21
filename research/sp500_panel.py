@@ -12,6 +12,8 @@
 # - Signals use the Company Share Count, `share_count × share_factor`, so that BRK.B and V count
 #   their Share Classes in Primary Class units. See
 #   docs/adr/0002-signals-count-shares-in-primary-class-units.md.
+# - Rows with no Share Count stay empty and are not ranked. See
+#   docs/adr/0003-a-constituent-with-no-share-count-is-not-ranked.md.
 
 # %%
 import pandas as pd
@@ -188,6 +190,10 @@ panel[panel["volume"] == 0].groupby("ticker").size().rename("zero_volume_rows").
 
 # %% [markdown]
 # ### Rows with no Share Count
+#
+# Constituent rows here come from Companies whose last filing before `START` is older than the
+# earliest Filing Date in the data (PEP, ADBE, ALXN), or from newly formed Companies before their
+# first filing (EVRG, LIN). CRH, VST and EXE have such rows only outside the S&P 500.
 
 # %%
 panel[panel["share_count"].isna()].groupby("ticker").size().rename("rows").sort_values(
