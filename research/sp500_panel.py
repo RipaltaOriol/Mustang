@@ -42,6 +42,7 @@ from src.providers import SharadarProvider
 # %%
 START = PANEL_START
 JUMP_THRESHOLD = 0.25
+KEEP_REFILINGS = False
 SAVE = False
 
 # %% [markdown]
@@ -82,10 +83,11 @@ window
 # ## Share Counts
 #
 # Effective Dates come from the full price history, because a filing can land before `START`.
+# A Re-filing replaces the first Share Count only when `KEEP_REFILINGS` is set.
 
 # %%
 filings = member_filings(inputs.filings, ever_members)
-counts = share_counts(filings, prices["date"])
+counts = share_counts(filings, prices["date"], keep_refilings=KEEP_REFILINGS)
 counts
 
 # %% [markdown]

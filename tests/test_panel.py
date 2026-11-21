@@ -119,9 +119,11 @@ def actions_of(rows=()):
     return member_actions(pd.DataFrame(list(rows), columns=ACTION_COLUMNS), {"AAA"})
 
 
-def counted(filings, prices=None):
+def counted(filings, prices=None, keep_refilings=False):
     prices = prices_of() if prices is None else prices
-    counts = share_counts(member_filings(pd.DataFrame(filings), {"AAA"}), prices["date"])
+    counts = share_counts(
+        member_filings(pd.DataFrame(filings), {"AAA"}), prices["date"], keep_refilings=keep_refilings
+    )
     return with_share_counts(prices, counts).sort_values("date")
 
 
@@ -211,6 +213,38 @@ def test_filings_landing_on_one_effective_date_resolve_to_the_latest():
     )
 
     assert rows["share_count"].tolist()[2:] == [200, 200, 200]
+
+
+REFILED_QUARTER = [
+    filing("AAA", "2019-11-01", shares=100, period_end="2019-09-30"),
+    filing("AAA", "2020-01-03", shares=500, period_end="2019-09-30"),
+]
+
+
+def test_a_refiled_quarter_keeps_the_first_share_count_by_default():
+    rows = counted(REFILED_QUARTER)
+
+    assert rows["share_count"].tolist() == [100] * len(TRADING_DAYS)
+    assert set(days(rows["filed_date"])) == {"2019-11-01"}
+
+
+def test_a_refiled_quarter_replaces_the_first_share_count_when_asked():
+    rows = counted(REFILED_QUARTER, keep_refilings=True)
+
+    assert rows["share_count"].tolist() == [100, 100, 500, 500, 500]
+    assert days(rows["effective_date"])[2] == "2020-01-06"
+
+
+def test_dropping_a_refiled_quarter_keeps_a_later_quarter_in_force():
+    rows = counted(
+        [
+            filing("AAA", "2019-08-01", shares=100, period_end="2019-06-30"),
+            filing("AAA", "2019-11-01", shares=200, period_end="2019-09-30"),
+            filing("AAA", "2020-01-03", shares=900, period_end="2019-06-30"),
+        ]
+    )
+
+    assert rows["share_count"].tolist() == [200] * len(TRADING_DAYS)
 
 
 def test_rows_before_a_companys_first_filing_have_no_share_count():
