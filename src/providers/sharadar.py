@@ -152,6 +152,11 @@ class SharadarProvider(DataProvider):
         end: DateLike | None = None,
         tickers: Sequence[str] | None = None,
     ) -> pd.DataFrame:
+        """
+        Return every ARQ filing's Share Count, Re-filings included; share_counts in src/panel.py drops them.
+
+        See: docs/adr/0001-a-refiled-quarter-keeps-the-first-share-count.md
+        """
         # ARQ keys rows on filing date and excludes restatements, so it cannot leak later data.
         frame = self.fetch_table(
             "fundamentals",
