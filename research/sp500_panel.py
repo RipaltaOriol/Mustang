@@ -9,6 +9,9 @@
 # - Rows with zero volume stay in the Panel. Treat their prices as untradable.
 # - `close_split_adjusted` pairs with `share_count`, `close_with_dividends` gives total returns, and
 #   `close_unadjusted` is the price actually traded.
+# - Signals use the Company Share Count, `share_count × share_factor`, so that BRK.B and V count
+#   their Share Classes in Primary Class units. See
+#   docs/adr/0001-signals-count-shares-in-primary-class-units.md.
 
 # %%
 import pandas as pd

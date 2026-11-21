@@ -43,6 +43,10 @@ _Avoid_: Factor, feature
 The number of shares outstanding reported on a filing's cover page, adjusted for later stock splits.
 _Avoid_: Float, weighted average shares
 
+**Company Share Count**:
+The Share Count times its share factor: the Company's shares across all Share Classes, in units of its Primary Class. Signals use it in place of the Share Count.
+_Avoid_: Total shares, economic shares
+
 **Filing Date**:
 The date a Company's report reached the SEC.
 _Avoid_: Report date, period end
