@@ -1,7 +1,5 @@
 # Signals count shares in Primary Class units
 
-Status: accepted, 2026-11-21. Resolves issue #2.
-
 ## Context
 
 The Panel has one row per Company and uses the Primary Class. Sharadar has no per-class Share Counts, so it was not known whether `share_count` covers one Share Class or all of them.
