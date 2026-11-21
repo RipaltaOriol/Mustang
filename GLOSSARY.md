@@ -69,3 +69,21 @@ _Avoid_: Delisting return, removal
 **Corporate Event**:
 An acquisition, merger, spin-off or stock split that can change a Share Count or a price without routine issuance or buybacks.
 _Avoid_: Action
+
+### Signals
+
+**Rebalance Date**:
+A date on which Signals are measured and Companies are ranked.
+_Avoid_: Formation date, observation date
+
+**Lookback**:
+The span between the two filings a change-based Signal compares, measured between their period ends.
+_Avoid_: Window, horizon
+
+**Net Shares Issued**:
+The change in the Company Share Count over the Lookback, counted in shares. It cannot be compared across Companies, so it is never ranked.
+_Avoid_: Net Issuance
+
+**Percentage Shares Issued**:
+The change in the Company Share Count over the Lookback as a fraction of the earlier Company Share Count. It is a Signal, and a negative value means a net buyback.
+_Avoid_: Net Issuance, dilution, share change
