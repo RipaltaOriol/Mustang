@@ -184,7 +184,7 @@ def test_provider_lists_undimensioned_cover_counts_by_filing(tmp_path):
     counts = provider.undimensioned_cover_counts(1)
 
     assert counts["accession"].tolist() == ["a-1", "a-2"]
-    assert counts["share_count"].tolist() == [100.0, 120.0]
+    assert counts["shares_outstanding"].tolist() == [100.0, 120.0]
     assert str(counts["filed_date"].dtype) == "datetime64[ns]"
 
 
@@ -199,4 +199,4 @@ def test_provider_lists_no_undimensioned_counts_when_every_count_has_a_class(tmp
     counts = provider.undimensioned_cover_counts(1652044)
 
     assert counts.empty
-    assert list(counts.columns) == ["accession", "filed_date", "share_count"]
+    assert list(counts.columns) == ["accession", "filed_date", "shares_outstanding"]

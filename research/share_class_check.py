@@ -1,11 +1,13 @@
 # %% [markdown]
 # # Share Counts of Companies with several Share Classes
 #
-# Checks each Share Count against the per-class counts on the cover page of the same SEC filing,
-# to find whether it covers all Share Classes or one. See GitHub issue #2.
+# Checks each Share Count against the per-class shares outstanding on the cover of the same SEC
+# filing, to find whether it covers all Share Classes or one. See GitHub issue #2 and
+# docs/adr/0002-signals-count-shares-in-primary-class-units.md.
 #
 # Needs `SHARADAR_API_KEY` and `SEC_USER_AGENT` (a name and contact email, as SEC requires) in
-# the environment or `.env`. SEC downloads are cached in `data/sec/`.
+# the environment or `.env`. SEC downloads are cached in `data/sec/`; a first run takes about an
+# hour.
 
 # %%
 import os
@@ -17,6 +19,8 @@ from src.panel import PANEL_START, PROCESSED_DIR, SECONDARY_TO_PRIMARY, company_
 from src.providers import DataProviderError, SecProvider, SharadarProvider
 from src.share_classes import (
     ALL_CLASSES,
+    SCOPE_BREAKS,
+    SCOPE_TOLERANCE,
     UNMATCHED,
     company_share_count,
     share_count_scope,
@@ -25,12 +29,11 @@ from src.share_classes import (
 
 # %%
 START = PANEL_START
-FULL_CHECK = sorted({*SECONDARY_TO_PRIMARY.values(), "BRK.B", "V", "BF.B"})
-SAMPLE_EVERY = 4
+ALWAYS_CHECK = sorted({*SECONDARY_TO_PRIMARY.values(), "BRK.B", "V", "BF.B"})
 FILING_MATCH_DAYS = 3
 SCREEN_UNMATCHED_SHARE = 0.1
+BREAK_GAP = 0.05
 BRK_A_IN_B_SHARES = 1_500
-SAVE = False
 
 # %% [markdown]
 # ## Inputs
@@ -58,10 +61,12 @@ filings = sharadar.fetch_snapshot(
 ).rename(columns={"date": "filed_date", "sharesbas": "share_count", "sharefactor": "share_factor"})
 filings["filed_date"] = pd.to_datetime(filings["filed_date"]).astype("datetime64[ns]")
 filings = filings[filings["filed_date"] >= pd.Timestamp(START) - pd.DateOffset(months=6)]
+filings
 
+# %%
 splits = sharadar.fetch_snapshot("actions", fields=("action", "value"), filters={"action": "split"})
 splits["date"] = pd.to_datetime(splits["date"]).astype("datetime64[ns]")
-filings
+splits
 
 # %% [markdown]
 # ## Screen
@@ -74,15 +79,15 @@ screen = []
 for record in records.itertuples():
     own = filings[filings["ticker"] == record.ticker]
     undimensioned = sec.undimensioned_cover_counts(record.cik)
-    matched = own.merge(undimensioned, on="filed_date", how="left", suffixes=("", "_sec"))
+    matched = own.merge(undimensioned, on="filed_date", how="left")
     multiplier = [split_multiplier(splits, record.ticker, day) for day in matched["filed_date"]]
-    ratio = matched["share_count"] / (matched["share_count_sec"] * multiplier)
+    ratio = matched["share_count"] / (matched["shares_outstanding"] * multiplier)
     screen.append(
         {
             "ticker": record.ticker,
             "filings": len(own),
             "unmatched": int(ratio.isna().sum()),
-            "disagreeing": int(((ratio - 1).abs() >= 0.005).sum()),
+            "disagreeing": int(((ratio - 1).abs() >= SCOPE_TOLERANCE).sum()),
         }
     )
 screen = pd.DataFrame(screen)
@@ -92,19 +97,17 @@ flagged = screen[
 flagged.sort_values("unmatched", ascending=False)
 
 # %% [markdown]
-# ## Check against the cover page
+# ## Check against the cover
 #
-# Each sampled filing's Share Count is compared with the sum of its cover's per-class counts,
-# after the splits since filing. Companies in `FULL_CHECK` have every filing checked.
+# Every filing of a flagged Company is compared with the sum of its cover's per-class shares
+# outstanding, after the splits since filing.
 
 # %%
 cik_of = dict(zip(records["ticker"], records["cik"]))
 checks = []
-for ticker in sorted(set(flagged["ticker"]) | (set(FULL_CHECK) & ever_members)):
-    own = filings[filings["ticker"] == ticker].sort_values("filed_date").reset_index(drop=True)
-    picked = own.index if ticker in FULL_CHECK else sorted({*own.index[::SAMPLE_EVERY], own.index[-1]})
+for ticker in sorted(set(flagged["ticker"]) | (set(ALWAYS_CHECK) & ever_members)):
     reports = sec.periodic_reports(cik_of[ticker])
-    for filing in own.loc[picked].itertuples():
+    for filing in filings[filings["ticker"] == ticker].sort_values("filed_date").itertuples():
         gap = (reports["filed_date"] - filing.filed_date).abs()
         if gap.empty or gap.min() > pd.Timedelta(days=FILING_MATCH_DAYS):
             checks.append({"ticker": ticker, "filed_date": filing.filed_date, "scope": "no SEC filing"})
@@ -124,7 +127,7 @@ for ticker in sorted(set(flagged["ticker"]) | (set(FULL_CHECK) & ever_members)):
                 "share_count": filing.share_count,
                 "share_factor": filing.share_factor,
                 "cover": cover,
-                "classes": len(cover),
+                "classes": sum("StatementClassOfStockAxis" in key for key in cover),
                 "scope": share_count_scope(filing.share_count, cover),
             }
         )
@@ -150,10 +153,52 @@ scope_table[scope_table.drop(columns=ALL_CLASSES, errors="ignore").sum(axis=1) >
 # to another entity, or a Share Class the Share Count leaves out. Read the cover to tell.
 
 # %%
-for row in several[~several["scope"].isin([ALL_CLASSES])].itertuples():
+for row in several[several["scope"] != ALL_CLASSES].itertuples():
     print(row.ticker, row.filed_date.date(), f"{row.share_count:,.0f}", row.scope)
     for share_class, count in row.cover.items():
         print(f"    {share_class or '(no class)'}: {count:,.0f}")
+
+# %% [markdown]
+# ## Scope breaks
+#
+# A candidate is a filing whose Share Count moves more than `BREAK_GAP` away from the move in
+# its cover's Company total, where the cover lists several classes or the scope changes.
+# Subsidiaries and preferred stock are left out of the total.
+#
+# Only ARES, KKR and PCG change which classes their count covers. ARES and KKR count their
+# voting-only Class C, paired with operating units, for a while and then stop. PCG starts
+# counting the shares its subsidiary ShareCo holds. ARES's 2020-05-08 break is not a candidate,
+# because its cover moves too: Class C was issued then for units that already existed. These
+# filings make up `SCOPE_BREAKS`.
+#
+# The other candidates are covers that list fully diluted counts or extra classes, that
+# mis-scale a number, or that are dated after a merger the Share Count already includes. RIG's
+# 2026-02-23 Share Count is a one-filing error in Sharadar, not a change of classes.
+
+# %%
+read = checks[checks["scope"] != "no SEC filing"].sort_values(["ticker", "filed_date"]).copy()
+read["cover_total"] = read["cover"].map(
+    lambda cover: sum(
+        count
+        for share_class, count in cover.items()
+        if "LegalEntityAxis" not in share_class and "Preferred" not in share_class
+    )
+)
+read["share_count_change"] = read.groupby("ticker")["share_count"].pct_change()
+read["cover_change"] = read.groupby("ticker")["cover_total"].pct_change()
+moved_apart = (read["share_count_change"] - read["cover_change"]).abs() > BREAK_GAP
+several_classes = (read["classes"] > 1) | (read.groupby("ticker")["classes"].shift() > 1)
+scope_changed = read["scope"] != read.groupby("ticker")["scope"].shift()
+break_candidates = read[moved_apart & (several_classes | scope_changed)]
+break_candidates[["ticker", "filed_date", "share_count_change", "cover_change", "scope"]]
+
+# %%
+pd.DataFrame(
+    [(ticker, day) for ticker, days in SCOPE_BREAKS.items() for day in days],
+    columns=["ticker", "filed_date"],
+).merge(read, on=["ticker", "filed_date"])[
+    ["ticker", "filed_date", "share_count_change", "cover_change", "scope"]
+]
 
 # %% [markdown]
 # ## BRK.B: the share factor converts to Primary Class units
@@ -162,9 +207,9 @@ for row in several[~several["scope"].isin([ALL_CLASSES])].itertuples():
 # one for one, so a conversion from A to B reads as issuance.
 
 # %%
-brk = checks[checks["ticker"] == "BRK.B"].copy()
-class_a = brk["cover"].map(lambda cover: cover["StatementClassOfStockAxis=CommonClassAMember"])
-class_b = brk["cover"].map(lambda cover: cover["StatementClassOfStockAxis=CommonClassBMember"])
+brk = checks[(checks["ticker"] == "BRK.B") & (checks["classes"] > 1)].copy()
+class_a = brk["cover"].map(lambda cover: cover.get("StatementClassOfStockAxis=CommonClassAMember"))
+class_b = brk["cover"].map(lambda cover: cover.get("StatementClassOfStockAxis=CommonClassBMember"))
 brk["b_equivalents"] = class_b + BRK_A_IN_B_SHARES * class_a
 brk["company_share_count"] = company_share_count(brk)
 brk["error"] = brk["company_share_count"] / brk["b_equivalents"] - 1
@@ -179,19 +224,11 @@ pd.Series(
         "companies_screened": len(screen),
         "companies_checked": checks["ticker"].nunique(),
         "companies_with_several_classes": several["ticker"].nunique(),
-        "filings_checked": int((checks["classes"] > 0).sum()),
+        "filings_checked": int((checks["scope"] != "no SEC filing").sum()),
         "all_class_filings": int((several["scope"] == ALL_CLASSES).sum()),
         "unmatched_filings": int((several["scope"] == UNMATCHED).sum()),
+        "brk_filings": len(brk),
         "brk_max_abs_error": brk["error"].abs().max(),
     },
     name="value",
 )
-
-# %% [markdown]
-# ## Save
-
-# %%
-if SAVE:
-    path = PROCESSED_DIR / "share_class_checks.parquet"
-    checks.assign(cover=checks["cover"].map(str)).to_parquet(path, index=False)
-    print(path)

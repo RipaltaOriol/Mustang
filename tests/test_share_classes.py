@@ -5,6 +5,7 @@ from src.share_classes import (
     ALL_CLASSES,
     UNMATCHED,
     company_share_count,
+    crosses_scope_break,
     share_count_scope,
     split_multiplier,
 )
@@ -72,3 +73,16 @@ def test_split_multiplier_compounds_only_splits_after_the_filing():
     assert split_multiplier(splits, "X", pd.Timestamp("2020-06-30")) == 40.0
     assert split_multiplier(splits, "X", pd.Timestamp("2022-01-01")) == 1.0
     assert split_multiplier(splits, "Z", pd.Timestamp("2020-06-30")) == 1.0
+
+
+def test_a_change_crosses_a_scope_break_filed_inside_its_span():
+    breaks = {"ARES": (pd.Timestamp("2026-02-25"),)}
+    changes = pd.DataFrame(
+        {
+            "ticker": ["ARES", "ARES", "ARES", "GOOGL"],
+            "earlier_filed": pd.to_datetime(["2025-11-06", "2026-02-25", "2024-11-08", "2025-11-06"]),
+            "later_filed": pd.to_datetime(["2026-02-25", "2026-05-08", "2025-11-06", "2026-02-25"]),
+        }
+    )
+
+    assert crosses_scope_break(changes, breaks).tolist() == [True, False, False, False]

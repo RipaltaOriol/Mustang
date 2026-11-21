@@ -1,5 +1,5 @@
 """
-SEC EDGAR reader for the per-class Share Counts on a filing's cover page.
+SEC EDGAR reader for the shares outstanding, per Share Class, on a filing's cover page.
 """
 
 import io
@@ -9,7 +9,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 import zipfile
-from collections.abc import Mapping
+from collections.abc import Iterable
 from pathlib import Path
 
 import pandas as pd
@@ -23,7 +23,7 @@ _COVER_FACT = "EntityCommonStockSharesOutstanding"
 _PERIODIC_FORMS = frozenset({"10-K", "10-Q", "10-KT", "10-QT"})
 _SUBMISSIONS_URL = "https://data.sec.gov/submissions/"
 _CONCEPT_URL = "https://data.sec.gov/api/xbrl/companyconcept/"
-_ARCHIVES_URL ="https://www.sec.gov/Archives/edgar/data"
+_ARCHIVES_URL = "https://www.sec.gov/Archives/edgar/data"
 _MAX_ATTEMPTS = 5
 _TIMEOUT_SECONDS = 60
 _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
@@ -50,8 +50,8 @@ _NUMBER_WORDS = {
 
 def cover_share_counts(document: str | bytes) -> dict[str, float]:
     """
-    Return each cover-page Share Count in an XBRL or inline XBRL document, keyed by its
-    `Axis=Member` dimensions, with "" for the count that carries no dimension.
+    Return the shares outstanding on the cover of an XBRL or inline XBRL document, keyed by
+    their `Axis=Member` dimensions, with "" for the count that carries no dimension.
     """
     text = document.decode("utf-8", "replace") if isinstance(document, bytes) else document
     if f"dei:{_COVER_FACT}" in text and "<ix:" in text:
@@ -76,7 +76,6 @@ class SecProvider:
         session: requests.Session | None = None,
         pause_seconds: float = _PAUSE_SECONDS,
     ) -> None:
-        # SEC blocks clients whose User-Agent does not name a contact.
         if not user_agent:
             raise ValueError("SEC requires a User-Agent that names a contact.")
         self._session = session or requests.Session()
@@ -118,8 +117,8 @@ class SecProvider:
 
     def undimensioned_cover_counts(self, cik: int) -> pd.DataFrame:
         """
-        Return the cover-page Share Counts that carry no Share Class, as `accession`,
-        `filed_date` and `share_count`; Companies that report only per class have none.
+        Return the cover's shares outstanding that carry no Share Class, as `accession`,
+        `filed_date` and `shares_outstanding`; Companies that report only per class have none.
         """
         url = f"{_CONCEPT_URL}CIK{cik:010d}/dei/{_COVER_FACT}.json"
         body = self._fetch(url)
@@ -128,7 +127,7 @@ class SecProvider:
             {
                 "accession": [fact["accn"] for fact in facts],
                 "filed_date": pd.to_datetime([fact["filed"] for fact in facts]),
-                "share_count": [float(fact["val"]) for fact in facts],
+                "shares_outstanding": [float(fact["val"]) for fact in facts],
             }
         )
         frame["filed_date"] = frame["filed_date"].astype("datetime64[ns]")
@@ -136,7 +135,7 @@ class SecProvider:
 
     def cover(self, cik: int, accession: str) -> dict[str, float]:
         """
-        Return the cover-page Share Counts of one filing, empty when it carries no XBRL.
+        Return the shares outstanding on one filing's cover, empty when it carries no XBRL.
 
         Raises:
             DataProviderError: the filing could not be downloaded.
@@ -228,7 +227,7 @@ def _inline_number(raw: str, number_format: str) -> float:
     return float(raw.replace(",", "").replace(" ", ""))
 
 
-def _dimension_key(members) -> str:
+def _dimension_key(members: Iterable[tuple[str | None, str | None]]) -> str:
     return "|".join(sorted(f"{_local_name(axis)}={_local_name(member)}" for axis, member in members))
 
 
