@@ -54,6 +54,10 @@ _Avoid_: Available date
 **Restatement**:
 A later correction to a number in an earlier filing. The Panel uses numbers as first reported, without Restatements.
 
+**Re-filing**:
+A later `ARQ` filing for a quarter the Company has already filed, often an amendment. By default the Panel keeps the first filing's Share Count and drops the Re-filing.
+_Avoid_: Amendment, restatement
+
 **Exit**:
 The end of a Company's listing, by acquisition, bankruptcy or another cause. It is recorded on the Company's last row only.
 _Avoid_: Delisting return, removal

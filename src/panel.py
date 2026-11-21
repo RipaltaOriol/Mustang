@@ -313,7 +313,18 @@ def _in_sp500(panel: pd.DataFrame, periods: pd.DataFrame) -> pd.Series:
     return flag
 
 
-def share_counts(filings: pd.DataFrame, trading_days: pd.Series) -> pd.DataFrame:
+def share_counts(
+    filings: pd.DataFrame, trading_days: pd.Series, keep_refilings: bool = False
+) -> pd.DataFrame:
+    """
+    Return each Share Count with its Effective Date, dropping Re-filings unless keep_refilings is set.
+
+    See: docs/adr/0001-a-refiled-quarter-keeps-the-first-share-count.md
+    """
+    if not keep_refilings:
+        filings = filings.sort_values(["ticker", "date"], kind="stable").drop_duplicates(
+            ["ticker", "reportperiod"], keep="first"
+        )
     calendar = np.sort(trading_days.unique())
     positions = np.searchsorted(calendar, filings["date"].to_numpy(), side="right")
     reachable = positions < len(calendar)
