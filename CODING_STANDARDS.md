@@ -56,3 +56,7 @@ A research script is a `# %%` Python file in `research/`, run cell by cell in an
 - Import with `from src...` and run on the `.venv` kernel. `uv sync` installs the project there, so this works from any folder; another kernel fails with `No module named 'src'`.
 
 **Markdown cells:** `# %% [markdown]` cells may run to several lines, as the exception to the comment rules above. Use them to record what a cell shows and what you concluded, in GLOSSARY words. Comments in code cells follow the rules above.
+
+## Signal documents
+
+A Signal in `src/` has a LaTeX methodology document in `docs/signals/<signal>.tex`, holding the method only and kept honest by a test that reads it against the code (see `tests/test_signal_docs.py`).
