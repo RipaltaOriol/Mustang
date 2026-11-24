@@ -1,7 +1,4 @@
-% Methodology for the Percentage Shares Issued Signal, as implemented in src/signals.py.
-% tests/test_signal_docs.py reads the macros below (\param, \missingreason, \eventaction,
-% \signalcolumn and the \ex... macros) and fails when they disagree with the code.
-% Nest braces at most one level deep inside their arguments. Build with: latexmk -pdf pct-shares-issued.tex
+% tests/test_signal_docs.py reads the macros below, so nest braces at most one level deep in their arguments.
 \documentclass[11pt]{article}
 
 \usepackage[margin=1in]{geometry}
@@ -20,7 +17,7 @@
 \newcommand{\exevent}[3]{#1 & #2 & \texttt{#3} \\}
 \newcommand{\exresult}[7]{#1 & #2 & #3 & #4 & #5 & #6 & #7 \\}
 
-\newcommand{\term}[1]{\textsc{#1}}
+\newcommand{\glossaryterm}[2]{\item[#1] #2}
 
 \title{Percentage Shares Issued\\\large Methodology}
 \date{}
@@ -36,26 +33,20 @@ The code in \texttt{src/signals.py} is the source of truth;
 
 \section{Terms}
 
-Capitalised terms follow \texttt{GLOSSARY.md}. The ones this note relies on:
+Capitalised terms follow \texttt{GLOSSARY.md}. The ones this note relies on, quoted from it:
 
 \begin{description}
-  \item[Constituent] A Company in the S\&P~500 on a given date, judged by what the index held
-    on that date.
-  \item[Share Count] The shares outstanding reported on a filing's cover page, adjusted for
-    later stock splits.
-  \item[Company Share Count] The Share Count times its share factor: the Company's shares across
-    all Share Classes, in units of its Primary Class.
-  \item[Filing Date] The date a Company's report reached the SEC.
-  \item[Effective Date] The first trading day after the Filing Date, from which a Share Count
-    may be used.
-  \item[Re-filing] A later filing for a quarter the Company has already filed.
-  \item[Corporate Event] An acquisition, merger, spin-off or stock split that can change a Share
-    Count without routine issuance or buybacks.
-  \item[Rebalance Date] A date on which Signals are measured and Companies are ranked.
-  \item[Lookback] The span between the two filings a change-based Signal compares, measured
-    between their period ends.
-  \item[Net Shares Issued] The change in the Company Share Count over the Lookback, in shares.
-  \item[Percentage Shares Issued] That change as a fraction of the earlier Company Share Count.
+  \glossaryterm{Constituent}{A company in the S\&P~500 on a given date, judged by what the index held on that date and not by what it holds today.}
+  \glossaryterm{Share Count}{The number of shares outstanding reported on a filing's cover page, adjusted for later stock splits.}
+  \glossaryterm{Company Share Count}{The Share Count times its share factor: the Company's shares across all Share Classes, in units of its Primary Class. Signals use it in place of the Share Count.}
+  \glossaryterm{Filing Date}{The date a Company's report reached the SEC.}
+  \glossaryterm{Effective Date}{The first trading day after the Filing Date, from which a Share Count may be used.}
+  \glossaryterm{Re-filing}{A later \texttt{ARQ} filing for a quarter the Company has already filed, often an amendment. By default the Panel keeps the first filing's Share Count and drops the Re-filing.}
+  \glossaryterm{Corporate Event}{An acquisition, merger, spin-off or stock split that can change a Share Count or a price without routine issuance or buybacks.}
+  \glossaryterm{Rebalance Date}{A date on which Signals are measured and Companies are ranked.}
+  \glossaryterm{Lookback}{The span between the two filings a change-based Signal compares, measured between their period ends.}
+  \glossaryterm{Net Shares Issued}{The change in the Company Share Count over the Lookback, counted in shares. It cannot be compared across Companies, so it is never ranked.}
+  \glossaryterm{Percentage Shares Issued}{The change in the Company Share Count over the Lookback as a fraction of the earlier Company Share Count. It is a Signal, and a negative value means a net buyback.}
 \end{description}
 
 \section{Parameters}
@@ -108,9 +99,8 @@ and within the tolerance:
   K_t &= \{\, g : e_g \le t,\ |p_g - p^{*}| \le \tau \,\}, \\
   g_t &= \operatorname*{arg\,min}_{g \in K_t} |p_g - p^{*}| .
 \end{align}
-When two filings in $K_t$ are equally close, which happens when a quarter was re-filed, $g_t$ is
-the one with the earlier Filing Date: a re-filed quarter keeps the first Share Count
-(ADR~0001).
+When two filings in $K_t$ are equally close, $g_t$ is the one with the earlier Filing Date. So
+when a quarter was re-filed, it keeps the first Share Count (ADR~0001).
 
 \subsection{Net and Percentage Shares Issued}
 
@@ -132,7 +122,7 @@ that applies, in this priority order:
 \begin{enumerate}
   \missingreason{no\_share\_count}{no filing is effective on $t$, or its Company Share Count is missing (ADR~0003).}
   \missingreason{stale}{$x$ is set and $a_{i,t} > A$.}
-  \missingreason{no\_comparison}{$K_t$ is empty, or $S_{g_t} \le 0$.}
+  \missingreason{no\_comparison}{$K_t$ is empty, or $S_{g_t}$ is missing or $\le 0$.}
   \missingreason{scope\_break}{a date $b \in \mathcal{B}_i$ falls in $d_{g_t} < b \le d_{f_t}$, so the change reflects which Share Classes are counted rather than issuance or buybacks (ADR~0002).}
 \end{enumerate}
 
@@ -148,20 +138,21 @@ Then
     \tfrac{1}{2} & n = 1 .
   \end{cases}
 \end{equation}
-$R = 0$ is the biggest net buyback and $R = 1$ the biggest net issuer. Each Rebalance Date is
+$R = 0$ is the lowest $P$, the biggest net buyback when $P < 0$, and $R = 1$ the highest. Each Rebalance Date is
 ranked on its own.
 
 \subsection{Corporate Event flag}
 
-A Constituent is flagged when a Corporate Event of its own falls in the Lookback, between the
-two Filing Dates: $d_{g_t} < \text{event date} \le d_{f_t}$. The flag marks changes that may
+A Constituent is flagged when a Corporate Event of its own falls between the Filing Dates of
+its comparison and latest filings: $d_{g_t} < \text{event date} \le d_{f_t}$. The window runs
+between Filing Dates, not the period ends that measure the Lookback. The flag marks changes that may
 come from a deal rather than routine issuance or buybacks; it does not change the value or the
 rank. The actions that count are
 \eventaction{spinoff}, \eventaction{spinoffdividend}, \eventaction{spunofffrom},
 \eventaction{mergerfrom}, \eventaction{mergerto} and every action starting with
 \texttt{acquisition}, written \eventaction{acquisition*}. Stock splits are not flagged: the
-Share Count is already adjusted for them. A Constituent with no comparison filing is never
-flagged.
+Share Count is already adjusted for them. A Constituent with an empty $K_t$
+is never flagged.
 
 \section{Output}
 
@@ -193,7 +184,6 @@ These follow from the data, whatever the parameters.
   \item The earliest Filing Date in the data is 2016-09-30. A Constituent has a comparison
     filing only once its latest period end is at least $L$ months, less $\tau$, after the
     earliest period end on record, so the first Rebalance Dates rank few or no Constituents.
-    A backtest should start on the first Rebalance Date that ranks most of the index.
   \item The Panel carries the filings in force on the trading days it covers. A filing that was
     replaced before a Company's first trading day in the Panel is not available as a
     comparison filing, so a Company whose listing starts late can lack one for its first

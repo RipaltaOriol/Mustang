@@ -17,17 +17,20 @@ from src.signals import (
     rebalance_dates,
 )
 
-DOC = Path(__file__).parents[1] / "docs" / "signals" / "pct-shares-issued.tex"
-DRIFT = f"{DOC.relative_to(DOC.parents[2])} no longer matches the code: update it, or fix the code if this change was unintended."
+ROOT = Path(__file__).parents[1]
+DOC = ROOT / "docs" / "signals" / "pct-shares-issued.tex"
+GLOSSARY = ROOT / "GLOSSARY.md"
+DRIFT = f"{DOC.relative_to(ROOT)} no longer matches the code: update it, or fix the code if this change was unintended."
 EXAMPLE_YEARS = {"Y1": "2001", "Y2": "2002"}
+DATA_INPUTS = {"trading_days", "constituents", "filings", "events"}
 EVENT_COLUMNS = ["date", "permaticker", "ticker", "action", "value", "contra_ticker", "contra_name"]
 
 
 def macro_calls(name, arity):
     """
-    Return the first `arity` arguments of each `\\name{...}` call in the document. Arguments nest
-    braces at most one level deep, so a regex can read them.
+    Return the first `arity` arguments of each `\\name{...}` call in the document.
     """
+    # Arguments nest braces at most one level deep, so a regex can read them.
     argument = r"\{((?:[^{}]|\{[^{}]*\})*)\}"
     pattern = re.compile(re.escape(f"\\{name}") + argument * arity)
     return [
@@ -49,14 +52,30 @@ def example_parameter(text):
     return text == "true" if text in ("true", "false") else int(text)
 
 
-def defaulted_parameters(function):
-    return {name for name, parameter in inspect.signature(function).parameters.items() if parameter.default is not parameter.empty}
+def plain_text(text):
+    text = re.sub(r"\\texttt\{([^{}]*)\}", r"\1", text).replace("\\&", "&").replace("~", " ")
+    return " ".join(text.replace("`", "").split())
+
+
+def glossary_definitions():
+    return {term: plain_text(definition) for term, definition in re.findall(r"^\*\*(.+?)\*\*:\n(.+)$", GLOSSARY.read_text(), re.M)}
+
+
+def parameters(function):
+    return set(inspect.signature(function).parameters) - DATA_INPUTS
 
 
 def test_the_parameter_table_lists_each_parameter_of_the_signal():
     documented = [argument for _, argument in macro_calls("param", 2)]
 
-    assert sorted(documented) == sorted(defaulted_parameters(pct_shares_issued) | defaulted_parameters(rebalance_dates)), DRIFT
+    assert sorted(documented) == sorted(parameters(pct_shares_issued) | parameters(rebalance_dates)), DRIFT
+
+
+def test_the_terms_quote_the_glossary():
+    glossary = glossary_definitions()
+
+    for term, definition in macro_calls("glossaryterm", 2):
+        assert plain_text(definition) == glossary.get(term), f"{term} no longer quotes GLOSSARY.md: update {DOC.relative_to(ROOT)}."
 
 
 def test_the_missing_reasons_are_listed_in_priority_order():

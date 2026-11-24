@@ -59,4 +59,4 @@ A research script is a `# %%` Python file in `research/`, run cell by cell in an
 
 ## Signal documents
 
-A Signal in `src/` has a LaTeX methodology document in `docs/signals/<signal>.tex`, kept honest by a test that reads it against the code (see `tests/test_signal_docs.py`). The document holds the method only: no results, and no parameter values outside its illustrative example. Commit the `.tex` only; build the PDF with `latexmk -pdf`.
+A Signal in `src/` has a LaTeX methodology document in `docs/signals/<signal>.tex`, holding the method only and kept honest by a test that reads it against the code (see `tests/test_signal_docs.py`).
