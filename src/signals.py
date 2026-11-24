@@ -33,9 +33,11 @@ NO_SHARE_COUNT = "no_share_count"
 STALE = "stale"
 NO_COMPARISON = "no_comparison"
 SCOPE_BREAK = "scope_break"
+# Highest priority first: a Constituent with several reasons records the first.
+MISSING_REASONS = (NO_SHARE_COUNT, STALE, NO_COMPARISON, SCOPE_BREAK)
 
-_LOOKBACK_EVENTS = frozenset({"spinoff", "spinoffdividend", "spunofffrom", "mergerfrom", "mergerto"})
-_LOOKBACK_EVENT_PREFIX = "acquisition"
+LOOKBACK_EVENT_ACTIONS = frozenset({"spinoff", "spinoffdividend", "spunofffrom", "mergerfrom", "mergerto"})
+LOOKBACK_EVENT_PREFIX = "acquisition"
 
 
 class SignalCheckError(Exception):
@@ -96,13 +98,16 @@ def pct_shares_issued(
     breaks = has_comparison & crosses_scope_break(
         table.rename(columns={"filed_date": "later_filed"}), scope_breaks
     )
-    stale = table["filing_age_days"].fillna(0) > max_filing_age_days
+    stale = exclude_stale & (table["filing_age_days"].fillna(0) > max_filing_age_days)
+    applies = {
+        NO_SHARE_COUNT: table["company_share_count"].isna(),
+        STALE: stale,
+        NO_COMPARISON: ~has_comparison,
+        SCOPE_BREAK: breaks,
+    }
     reason = pd.Series(None, index=table.index, dtype=object)
-    reason[breaks] = SCOPE_BREAK
-    reason[~has_comparison] = NO_COMPARISON
-    if exclude_stale:
-        reason[stale] = STALE
-    reason[table["company_share_count"].isna()] = NO_SHARE_COUNT
+    for name in reversed(MISSING_REASONS):
+        reason[applies[name]] = name
     table["missing_reason"] = reason
     _warn_no_comparison(table)
 
@@ -200,7 +205,7 @@ def _percentile_ranks(table: pd.DataFrame) -> pd.Series:
 
 
 def _event_in_lookback(table: pd.DataFrame, events: pd.DataFrame) -> pd.Series:
-    wanted = events["action"].isin(_LOOKBACK_EVENTS) | events["action"].str.startswith(_LOOKBACK_EVENT_PREFIX)
+    wanted = events["action"].isin(LOOKBACK_EVENT_ACTIONS) | events["action"].str.startswith(LOOKBACK_EVENT_PREFIX)
     windows = table[["ticker", "earlier_filed", "filed_date"]].reset_index()
     joined = windows.merge(events.loc[wanted, ["ticker", "date"]], on="ticker")
     inside = (joined["date"] > joined["earlier_filed"]) & (joined["date"] <= joined["filed_date"])

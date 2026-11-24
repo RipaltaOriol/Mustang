@@ -77,3 +77,11 @@ ui/src/.ds-query-client.ts
 
 # Licensed vendor data and everything built from it
 data/
+
+# LaTeX build files; the .tex is the only committed copy of a document
+docs/**/*.pdf
+*.aux
+*.fdb_latexmk
+*.fls
+*.out
+*.synctex.gz

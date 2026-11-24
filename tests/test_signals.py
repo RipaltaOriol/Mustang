@@ -224,6 +224,12 @@ def test_a_stale_filing_is_ranked_when_stale_filings_are_kept():
     assert pd.isna(row(table, "AAA")["missing_reason"])
 
 
+def test_a_stale_filing_with_no_comparison_records_stale():
+    table = signal(members("AAA"), [filing("AAA", "2020-03-31", 110)], max_filing_age_days=200)
+
+    assert row(table, "AAA")["missing_reason"] == "stale"
+
+
 def test_a_constituent_with_no_share_count_is_kept_unranked():
     table = signal(members("AAA", "BBB"), yearly("AAA", 100, 110))
 
